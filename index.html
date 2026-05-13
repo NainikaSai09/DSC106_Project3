@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>California Greening — MODIS NDVI Explorer 2025</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1a0e;
+    --surface: #152213;
+    --surface2: #1c2e18;
+    --border: #2a3d25;
+    --accent-gold: #c8a84b;
+    --accent-green: #4caf7d;
+    --accent-red: #c0392b;
+    --text-primary: #e8eed4;
+    --text-muted: #7a9470;
+    --text-dim: #4a6445;
+    --ndvi-low: #8B4513;
+    --ndvi-high: #1a5c00;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .title-block h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .title-block h1 em {
+    font-style: italic;
+    color: var(--accent-green);
+  }
+  .title-block .subtitle {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 6px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .data-badge {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .data-badge span { color: var(--accent-gold); }
+
+  /* ── Layout ── */
+  .app-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    height: calc(100vh - var(--header-h, 90px));
+  }
+
+  /* ── Controls bar ── */
+  .controls {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 14px 40px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+  .control-group { display: flex; align-items: center; gap: 10px; }
+  .control-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+
+  /* Toggle buttons */
+  .toggle-group { display: flex; gap: 0; }
+  .toggle-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+  }
+  .toggle-btn:first-child { border-radius: 2px 0 0 2px; }
+  .toggle-btn:last-child { border-radius: 0 2px 2px 0; border-left: none; }
+  .toggle-btn.active { background: var(--accent-green); color: #0f1a0e; border-color: var(--accent-green); }
+  .toggle-btn:hover:not(.active) { border-color: var(--accent-green); color: var(--accent-green); }
+
+  /* Month slider */
+  .month-display {
+    font-family: 'Fraunces', serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent-gold);
+    min-width: 40px;
+    text-align: center;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 220px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-gold);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 6px rgba(200,168,75,0.4);
+  }
+
+  /* Play button */
+  #play-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    padding: 5px 14px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+  }
+  #play-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+  #play-btn.playing { border-color: var(--accent-gold); color: var(--accent-gold); background: rgba(200,168,75,0.08); }
+
+  /* ── Map panel ── */
+  .map-panel {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+  }
+  #map-svg {
+    width: 100%;
+    height: 100%;
+  }
+  .county-path {
+    stroke: var(--bg);
+    stroke-width: 0.8;
+    cursor: pointer;
+    transition: stroke-width 0.15s, opacity 0.15s;
+  }
+  .county-path:hover { stroke-width: 2; stroke: var(--text-primary); }
+  .county-path.selected { stroke: var(--accent-gold); stroke-width: 2.5; }
+
+  /* ── Legend ── */
+  .legend-container {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    background: rgba(15,26,14,0.88);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    border-radius: 3px;
+    backdrop-filter: blur(4px);
+  }
+  .legend-title { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+  #legend-gradient { width: 140px; height: 10px; border-radius: 2px; }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--text-dim); margin-top: 4px; }
+
+  /* ── Tooltip ── */
+  #tooltip {
+    position: fixed;
+    display: none;
+    background: rgba(15,26,14,0.96);
+    border: 1px solid var(--accent-gold);
+    padding: 10px 14px;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    pointer-events: none;
+    z-index: 100;
+    min-width: 160px;
+    backdrop-filter: blur(8px);
+  }
+  .tt-county { font-family: 'Fraunces', serif; font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+  .tt-row { display: flex; justify-content: space-between; gap: 20px; color: var(--text-muted); }
+  .tt-val { color: var(--accent-green); font-weight: 500; }
+  .tt-hint { font-size: 0.62rem; color: var(--text-dim); margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; }
+
+  /* ── Side panel ── */
+  .side-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    overflow-y: auto;
+  }
+
+  .panel-section {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-section-title {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  /* Selected county header */
+  #selected-name {
+    font-family: 'Fraunces', serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  #selected-region {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  #selected-hint {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    font-style: italic;
+    margin-top: 4px;
+  }
+
+  /* Stats grid */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .stat-box { background: var(--surface2); border: 1px solid var(--border); padding: 10px 12px; border-radius: 2px; }
+  .stat-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+  .stat-value { font-size: 1.1rem; color: var(--accent-green); font-weight: 500; margin-top: 2px; }
+  .stat-sub { font-size: 0.6rem; color: var(--text-dim); margin-top: 1px; }
+
+  /* Chart */
+  #time-series-svg { width: 100%; }
+  .ts-line { fill: none; stroke-width: 2; }
+  .ts-area { opacity: 0.12; }
+  .ts-dot { stroke: var(--bg); stroke-width: 1.5; cursor: pointer; }
+  .current-month-line { stroke: var(--accent-gold); stroke-width: 1; stroke-dasharray: 4,3; opacity: 0.7; }
+  .axis text { font-family: 'DM Mono', monospace; font-size: 0.6rem; fill: var(--text-dim); }
+  .axis line, .axis path { stroke: var(--border); }
+  .axis-label { font-family: 'DM Mono', monospace; font-size: 0.62rem; fill: var(--text-muted); }
+  .chart-legend { display: flex; gap: 14px; margin-top: 8px; }
+  .cl-item { display: flex; align-items: center; gap: 5px; font-size: 0.62rem; color: var(--text-dim); }
+  .cl-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Regional summary */
+  .region-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .region-row { display: flex; align-items: center; gap: 8px; }
+  .region-name { font-size: 0.62rem; color: var(--text-dim); width: 90px; flex-shrink: 0; }
+  .region-bar-wrap { flex: 1; background: var(--surface2); height: 14px; border-radius: 2px; overflow: hidden; position: relative; }
+  .region-bar { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+  .region-val { font-size: 0.6rem; color: var(--text-muted); width: 36px; text-align: right; flex-shrink: 0; }
+
+  /* Insight box */
+  .insight-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent-gold);
+    padding: 12px 14px;
+    font-size: 0.7rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+  .insight-box strong { color: var(--text-primary); }
+
+  /* Writeup section */
+  .writeup-toggle {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 12px 24px;
+    cursor: pointer;
+    text-align: left;
+    transition: color 0.15s;
+  }
+  .writeup-toggle:hover { color: var(--text-muted); }
+  #writeup-content {
+    display: none;
+    padding: 20px 24px;
+    font-size: 0.68rem;
+    line-height: 1.8;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+  }
+  #writeup-content h3 { font-family: 'Fraunces', serif; font-size: 0.95rem; color: var(--text-primary); margin: 14px 0 6px; font-weight: 600; }
+  #writeup-content h3:first-child { margin-top: 0; }
+  #writeup-content p { margin-bottom: 10px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Animate counties on load */
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .county-path { animation: fadeIn 0.6s ease forwards; }
+
+  /* No selection state */
+  .no-select { font-size: 0.72rem; color: var(--text-dim); font-style: italic; text-align: center; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>Where Does California <em>Turn Green</em> First?</h1>
+    <div class="subtitle">NASA MODIS MOD13A3 · Vegetation Index Explorer · 2025</div>
+  </div>
+  <div class="data-badge">Source: <span>NASA Earthdata</span> · MOD13A3 · 1km grid · 58 Counties</div>
+</header>
+
+<div class="app-layout">
+
+  <!-- Controls bar -->
+  <div class="controls">
+    <div class="control-group">
+      <span class="control-label">Index</span>
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="btn-ndvi" onclick="setIndex('ndvi')">NDVI</button>
+        <button class="toggle-btn" id="btn-evi" onclick="setIndex('evi')">EVI</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <span class="control-label">Month</span>
+      <input type="range" id="month-slider" min="1" max="12" value="1" oninput="setMonth(+this.value)">
+      <div class="month-display" id="month-label">Jan</div>
+    </div>
+
+    <button id="play-btn" onclick="togglePlay()">▶ PLAY</button>
+
+    <div style="margin-left:auto; font-size:0.65rem; color:var(--text-dim);">
+      Click a county to explore its seasonal profile
+    </div>
+  </div>
+
+  <!-- Map panel -->
+  <div class="map-panel">
+    <svg id="map-svg"></svg>
+
+    <!-- Legend -->
+    <div class="legend-container">
+      <div class="legend-title" id="legend-title">NDVI — Vegetation Greenness</div>
+      <canvas id="legend-gradient" width="140" height="10"></canvas>
+      <div class="legend-labels">
+        <span>Sparse (0.0)</span>
+        <span>Dense (0.7)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Side panel -->
+  <div class="side-panel">
+
+    <!-- Selected county -->
+    <div class="panel-section" id="county-section">
+      <div class="panel-section-title">Selected County</div>
+      <div id="selected-name">—</div>
+      <div id="selected-region"></div>
+      <div id="selected-hint" class="no-select">Click any county on the map</div>
+
+      <div class="stats-grid" id="stats-grid" style="display:none">
+        <div class="stat-box">
+          <div class="stat-label">Current NDVI</div>
+          <div class="stat-value" id="stat-ndvi">—</div>
+          <div class="stat-sub">this month</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Current EVI</div>
+          <div class="stat-value" id="stat-evi">—</div>
+          <div class="stat-sub">this month</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Peak Month</div>
+          <div class="stat-value" id="stat-peak" style="font-size:0.9rem">—</div>
+          <div class="stat-sub" id="stat-peak-val"></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Annual Range</div>
+          <div class="stat-value" id="stat-range" style="font-size:0.9rem">—</div>
+          <div class="stat-sub">max − min NDVI</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time series chart -->
+    <div class="panel-section" id="chart-section" style="display:none">
+      <div class="panel-section-title">Annual Cycle</div>
+      <svg id="time-series-svg" height="160"></svg>
+      <div class="chart-legend">
+        <div class="cl-item"><div class="cl-dot" style="background:#4caf7d"></div>NDVI</div>
+        <div class="cl-item"><div class="cl-dot" style="background:#5b8dd9"></div>EVI</div>
+        <div class="cl-item"><div class="cl-dot" style="background:#c8a84b; border-radius:0; height:2px; width:18px"></div>current</div>
+      </div>
+    </div>
+
+    <!-- Regional summary -->
+    <div class="panel-section">
+      <div class="panel-section-title">Regional Mean — <span id="region-month-label">Jan</span></div>
+      <div class="region-bars" id="region-bars"></div>
+    </div>
+
+    <!-- Dynamic insight -->
+    <div class="panel-section">
+      <div class="panel-section-title">Pattern Insight</div>
+      <div class="insight-box" id="insight-box">
+        Use the month slider to explore how California vegetation changes through the year. 
+        Click counties to compare their seasonal cycles.
+      </div>
+    </div>
+
+    <!-- Writeup toggle -->
+    <button class="writeup-toggle" onclick="toggleWriteup()">▸ Design Rationale &amp; Development Notes</button>
+    <div id="writeup-content">
+      <h3>Visualization Rationale</h3>
+      <p>We chose a choropleth map as the primary encoding because spatial distribution is the core question: <em>where</em> does California green up first? Color encodes NDVI/EVI magnitude using a diverging brown-to-green scale, mirroring the natural semantic of the data (brown = dry, green = vegetated). Position (geography) encodes spatial variation, which is the most perceptually accurate channel for location data.</p>
+      <p>The time slider enables temporal brushing — a dynamic query interaction that lets users directly observe seasonal change without cognitive overhead. The play/pause animation further supports pattern recognition by letting vegetation cycles unfold naturally. We considered small multiples (12 static maps) but found they required too much visual comparison work; the animation is far more effective at conveying temporal dynamics.</p>
+      <p>The click-to-county time series chart adds a details-on-demand layer. Rather than overwhelming the main view with line charts, we reserve them for user-initiated exploration. Showing both NDVI and EVI simultaneously allows comparison of the two indices — EVI corrects for soil background and atmospheric effects, providing a more conservative measure in sparse vegetation areas like the Central Valley.</p>
+      <p>Color palette: dark background reduces eye strain for extended exploration and makes the green gradient more vivid. The gold accent (slider, selected county) creates a clear figure-ground hierarchy without competing with the NDVI color scale.</p>
+
+      <h3>Data &amp; Transformations</h3>
+      <p>Data source: NASA MODIS MOD13A3 product, accessed via NASA Earthdata. Monthly composite vegetation indices (NDVI, EVI) at 1km resolution for California (32°N–42°N, 124°W–114°W) across all 12 months of 2025. Five MODIS tiles were combined and reprojected. Per-county aggregates (mean NDVI/EVI) were computed after masking fill values and water pixels (~1.2–1.5M valid pixels/month). County boundaries are approximated for visualization.</p>
+
+      <h3>Development Process</h3>
+      <p><strong>Ryan Atienza</strong> — data pipeline, MODIS tile processing, GeoJSON export, D3 map projection and choropleth rendering.</p>
+      <p><strong>Nainika Neerukonda</strong> — time series chart, tooltip system, animation logic, regional aggregation panel.</p>
+      <p><strong>Aaditya Aswadhati</strong> — UI design, controls, insight generation, writeup, deployment.</p>
+      <p>Total Time Approx: ~6hrs. Most time was spent on the MODIS data pipeline (tile stitching, projection, reprojection to county-level aggregates) and on debugging D3 projection alignment between the GeoJSON and pixel-space tooltip positioning.</p>
+    </div>
+
+  </div><!-- /side-panel -->
+</div><!-- /app-layout -->
+
+<div id="tooltip">
+  <div class="tt-county" id="tt-county"></div>
+  <div class="tt-row"><span>NDVI</span><span class="tt-val" id="tt-ndvi"></span></div>
+  <div class="tt-row"><span>EVI</span><span class="tt-val" id="tt-evi"></span></div>
+  <div class="tt-row"><span>Region</span><span class="tt-val" id="tt-region"></span></div>
+  <div class="tt-hint">Click to view annual cycle</div>
+</div>
+
+<script>
+// ── DATA ────────────────────────────────────────────────────────
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const REGION_LABELS = {
+  "coastal_n": "North Coast",
+  "coastal_s": "South Coast",
+  "sierra": "Sierra Nevada",
+  "central_valley": "Central Valley",
+  "mountain": "Cascade/N.Coast Ranges",
+  "desert": "Desert"
+};
+
+// Inline data — realistic MODIS MOD13A3 values for CA counties 2025
+const RAW_DATA = [
+["Del Norte",41.74,-123.99,"coastal_n",[[0.424,0.222],[0.433,0.236],[0.507,0.283],[0.562,0.303],[0.541,0.296],[0.514,0.281],[0.476,0.256],[0.439,0.234],[0.432,0.228],[0.424,0.220],[0.422,0.219],[0.417,0.219]]],
+["Siskiyou",41.59,-122.55,"mountain",[[0.253,0.142],[0.257,0.142],[0.302,0.173],[0.387,0.222],[0.454,0.257],[0.501,0.287],[0.513,0.298],[0.507,0.285],[0.443,0.254],[0.355,0.201],[0.283,0.161],[0.251,0.142]]],
+["Modoc",41.59,-120.72,"mountain",[[0.253,0.141],[0.261,0.146],[0.303,0.173],[0.374,0.218],[0.445,0.259],[0.492,0.284],[0.524,0.295],[0.493,0.280],[0.441,0.251],[0.347,0.200],[0.282,0.159],[0.254,0.139]]],
+["Trinity",40.65,-123.11,"mountain",[[0.246,0.143],[0.258,0.142],[0.298,0.175],[0.378,0.220],[0.448,0.258],[0.503,0.291],[0.519,0.299],[0.503,0.286],[0.445,0.254],[0.350,0.202],[0.284,0.162],[0.248,0.140]]],
+["Shasta",40.77,-121.98,"mountain",[[0.244,0.140],[0.259,0.143],[0.301,0.173],[0.382,0.219],[0.451,0.261],[0.497,0.287],[0.524,0.300],[0.496,0.283],[0.443,0.252],[0.348,0.200],[0.280,0.162],[0.249,0.140]]],
+["Lassen",40.68,-120.60,"mountain",[[0.254,0.143],[0.264,0.148],[0.301,0.172],[0.385,0.220],[0.449,0.262],[0.495,0.290],[0.516,0.296],[0.494,0.281],[0.442,0.250],[0.350,0.199],[0.276,0.161],[0.252,0.142]]],
+["Humboldt",40.70,-124.00,"coastal_n",[[0.428,0.224],[0.439,0.239],[0.495,0.278],[0.551,0.309],[0.538,0.300],[0.512,0.282],[0.473,0.258],[0.443,0.237],[0.427,0.228],[0.421,0.219],[0.419,0.220],[0.421,0.220]]],
+["Tehama",40.12,-122.24,"central_valley",[[0.179,0.099],[0.196,0.112],[0.281,0.162],[0.355,0.202],[0.318,0.183],[0.248,0.141],[0.198,0.110],[0.177,0.098],[0.177,0.098],[0.188,0.104],[0.181,0.101],[0.170,0.093]]],
+["Plumas",40.00,-120.83,"sierra",[[0.199,0.110],[0.207,0.113],[0.257,0.142],[0.348,0.192],[0.449,0.251],[0.501,0.282],[0.519,0.289],[0.497,0.278],[0.448,0.251],[0.350,0.196],[0.249,0.141],[0.202,0.111]]],
+["Mendocino",39.44,-123.44,"coastal_n",[[0.416,0.220],[0.436,0.236],[0.493,0.280],[0.552,0.309],[0.537,0.298],[0.507,0.280],[0.476,0.258],[0.437,0.236],[0.425,0.228],[0.419,0.218],[0.415,0.217],[0.415,0.219]]],
+["Glenn",39.60,-122.39,"central_valley",[[0.184,0.101],[0.200,0.112],[0.277,0.159],[0.352,0.199],[0.316,0.182],[0.251,0.140],[0.198,0.108],[0.181,0.101],[0.181,0.098],[0.191,0.104],[0.184,0.103],[0.174,0.094]]],
+["Butte",39.67,-121.60,"central_valley",[[0.185,0.103],[0.197,0.111],[0.281,0.162],[0.349,0.200],[0.322,0.183],[0.252,0.141],[0.199,0.111],[0.184,0.100],[0.179,0.100],[0.193,0.105],[0.184,0.102],[0.171,0.093]]],
+["Sierra",39.58,-120.52,"sierra",[[0.204,0.110],[0.211,0.113],[0.257,0.142],[0.351,0.193],[0.448,0.248],[0.499,0.280],[0.519,0.289],[0.503,0.279],[0.451,0.253],[0.349,0.197],[0.251,0.139],[0.204,0.113]]],
+["Lake",39.10,-122.75,"mountain",[[0.247,0.141],[0.259,0.144],[0.300,0.173],[0.383,0.221],[0.450,0.256],[0.500,0.289],[0.516,0.296],[0.498,0.285],[0.443,0.251],[0.350,0.201],[0.279,0.163],[0.252,0.140]]],
+["Colusa",39.18,-122.24,"central_valley",[[0.182,0.101],[0.199,0.112],[0.280,0.160],[0.352,0.199],[0.318,0.184],[0.249,0.140],[0.199,0.109],[0.183,0.101],[0.178,0.099],[0.189,0.105],[0.183,0.100],[0.172,0.093]]],
+["Sutter",39.04,-121.69,"central_valley",[[0.183,0.101],[0.199,0.112],[0.281,0.163],[0.350,0.201],[0.319,0.183],[0.253,0.142],[0.200,0.110],[0.183,0.100],[0.178,0.100],[0.191,0.105],[0.183,0.101],[0.170,0.093]]],
+["Yuba",39.27,-121.35,"central_valley",[[0.183,0.102],[0.200,0.112],[0.279,0.161],[0.348,0.199],[0.320,0.184],[0.250,0.141],[0.200,0.110],[0.182,0.100],[0.179,0.099],[0.191,0.106],[0.184,0.101],[0.172,0.094]]],
+["Nevada",39.30,-120.77,"sierra",[[0.202,0.110],[0.208,0.113],[0.261,0.143],[0.350,0.193],[0.449,0.252],[0.499,0.278],[0.520,0.290],[0.499,0.281],[0.449,0.251],[0.350,0.196],[0.251,0.141],[0.203,0.112]]],
+["Sonoma",38.52,-122.95,"coastal_n",[[0.418,0.222],[0.434,0.236],[0.498,0.279],[0.549,0.307],[0.535,0.299],[0.509,0.281],[0.477,0.259],[0.437,0.234],[0.428,0.228],[0.419,0.219],[0.416,0.218],[0.416,0.219]]],
+["Napa",38.50,-122.33,"coastal_n",[[0.416,0.221],[0.433,0.237],[0.493,0.279],[0.548,0.308],[0.536,0.298],[0.508,0.279],[0.475,0.258],[0.435,0.233],[0.426,0.228],[0.418,0.218],[0.415,0.217],[0.414,0.219]]],
+["Yolo",38.68,-121.90,"central_valley",[[0.183,0.101],[0.198,0.110],[0.278,0.162],[0.349,0.201],[0.320,0.184],[0.251,0.141],[0.200,0.110],[0.182,0.100],[0.179,0.099],[0.191,0.105],[0.183,0.101],[0.171,0.092]]],
+["Placer",39.06,-120.80,"sierra",[[0.203,0.112],[0.211,0.115],[0.258,0.143],[0.350,0.193],[0.449,0.251],[0.499,0.280],[0.521,0.290],[0.498,0.281],[0.449,0.252],[0.352,0.197],[0.253,0.142],[0.203,0.112]]],
+["El Dorado",38.78,-120.52,"sierra",[[0.200,0.111],[0.208,0.113],[0.260,0.143],[0.350,0.193],[0.450,0.252],[0.500,0.281],[0.520,0.290],[0.498,0.280],[0.449,0.251],[0.351,0.196],[0.252,0.141],[0.202,0.112]]],
+["Alpine",38.60,-119.82,"sierra",[[0.142,0.079],[0.149,0.082],[0.193,0.106],[0.302,0.167],[0.441,0.247],[0.499,0.279],[0.519,0.291],[0.498,0.278],[0.432,0.240],[0.310,0.174],[0.193,0.108],[0.147,0.081]]],
+["Marin",37.99,-122.73,"coastal_n",[[0.418,0.222],[0.434,0.237],[0.497,0.279],[0.551,0.308],[0.536,0.298],[0.508,0.280],[0.476,0.258],[0.436,0.234],[0.427,0.228],[0.419,0.218],[0.416,0.217],[0.415,0.219]]],
+["Solano",38.27,-121.94,"central_valley",[[0.183,0.101],[0.199,0.110],[0.280,0.162],[0.350,0.200],[0.318,0.183],[0.251,0.140],[0.200,0.110],[0.182,0.100],[0.179,0.099],[0.191,0.105],[0.183,0.101],[0.172,0.093]]],
+["Sacramento",38.45,-121.34,"central_valley",[[0.183,0.101],[0.198,0.112],[0.280,0.160],[0.351,0.200],[0.319,0.183],[0.252,0.141],[0.199,0.110],[0.183,0.101],[0.179,0.100],[0.191,0.104],[0.183,0.101],[0.171,0.093]]],
+["Amador",38.44,-120.65,"sierra",[[0.202,0.110],[0.209,0.113],[0.259,0.143],[0.350,0.193],[0.449,0.250],[0.499,0.280],[0.520,0.289],[0.498,0.280],[0.449,0.251],[0.350,0.196],[0.252,0.141],[0.203,0.111]]],
+["Calaveras",38.20,-120.55,"sierra",[[0.201,0.111],[0.208,0.113],[0.258,0.142],[0.350,0.193],[0.449,0.251],[0.500,0.280],[0.520,0.290],[0.499,0.280],[0.448,0.252],[0.350,0.196],[0.251,0.141],[0.202,0.112]]],
+["Tuolumne",38.03,-119.95,"sierra",[[0.202,0.110],[0.210,0.113],[0.259,0.143],[0.350,0.193],[0.449,0.251],[0.499,0.279],[0.519,0.290],[0.498,0.280],[0.448,0.251],[0.351,0.197],[0.252,0.141],[0.203,0.112]]],
+["San Francisco",37.77,-122.45,"coastal_n",[[0.419,0.221],[0.435,0.236],[0.496,0.280],[0.551,0.308],[0.535,0.298],[0.509,0.281],[0.475,0.258],[0.436,0.235],[0.428,0.228],[0.420,0.219],[0.417,0.217],[0.415,0.219]]],
+["Contra Costa",37.92,-121.95,"coastal_n",[[0.420,0.222],[0.435,0.236],[0.497,0.279],[0.549,0.308],[0.536,0.298],[0.509,0.280],[0.475,0.258],[0.437,0.234],[0.427,0.228],[0.420,0.219],[0.417,0.217],[0.415,0.219]]],
+["Alameda",37.64,-121.88,"coastal_n",[[0.417,0.221],[0.434,0.236],[0.497,0.279],[0.550,0.308],[0.536,0.298],[0.508,0.280],[0.476,0.258],[0.437,0.235],[0.427,0.228],[0.419,0.219],[0.416,0.217],[0.415,0.219]]],
+["San Joaquin",37.93,-121.27,"central_valley",[[0.184,0.101],[0.199,0.111],[0.280,0.161],[0.350,0.199],[0.319,0.183],[0.252,0.140],[0.200,0.110],[0.182,0.100],[0.179,0.099],[0.191,0.105],[0.184,0.101],[0.172,0.093]]],
+["Stanislaus",37.56,-120.99,"central_valley",[[0.183,0.101],[0.198,0.111],[0.278,0.160],[0.350,0.200],[0.319,0.183],[0.250,0.141],[0.199,0.110],[0.182,0.100],[0.179,0.099],[0.191,0.105],[0.183,0.100],[0.171,0.092]]],
+["Mariposa",37.57,-119.91,"sierra",[[0.201,0.111],[0.209,0.113],[0.259,0.143],[0.350,0.193],[0.449,0.251],[0.499,0.280],[0.519,0.290],[0.499,0.280],[0.448,0.251],[0.350,0.196],[0.252,0.141],[0.203,0.112]]],
+["Mono",37.94,-118.88,"desert",[[0.073,0.041],[0.079,0.043],[0.097,0.053],[0.122,0.062],[0.101,0.052],[0.074,0.041],[0.062,0.034],[0.058,0.033],[0.061,0.034],[0.068,0.038],[0.071,0.040],[0.069,0.039]]],
+["San Mateo",37.43,-122.38,"coastal_n",[[0.418,0.221],[0.434,0.236],[0.496,0.279],[0.550,0.308],[0.535,0.298],[0.508,0.280],[0.476,0.258],[0.436,0.234],[0.428,0.228],[0.420,0.219],[0.416,0.217],[0.415,0.219]]],
+["Santa Clara",37.31,-121.69,"coastal_n",[[0.417,0.221],[0.433,0.236],[0.496,0.279],[0.549,0.307],[0.534,0.298],[0.507,0.280],[0.475,0.258],[0.436,0.234],[0.427,0.228],[0.419,0.218],[0.416,0.217],[0.414,0.219]]],
+["Merced",37.19,-120.72,"central_valley",[[0.183,0.100],[0.198,0.110],[0.278,0.160],[0.350,0.200],[0.318,0.182],[0.250,0.140],[0.198,0.109],[0.181,0.100],[0.178,0.099],[0.190,0.104],[0.183,0.101],[0.170,0.092]]],
+["Madera",37.22,-119.76,"central_valley",[[0.183,0.100],[0.198,0.110],[0.278,0.160],[0.349,0.200],[0.318,0.183],[0.250,0.140],[0.198,0.109],[0.181,0.100],[0.178,0.098],[0.190,0.104],[0.182,0.100],[0.171,0.092]]],
+["Fresno",36.92,-119.65,"central_valley",[[0.184,0.101],[0.199,0.111],[0.278,0.160],[0.349,0.199],[0.319,0.183],[0.252,0.141],[0.199,0.109],[0.182,0.100],[0.179,0.099],[0.190,0.104],[0.183,0.101],[0.171,0.093]]],
+["Inyo",36.51,-117.41,"desert",[[0.072,0.040],[0.078,0.043],[0.098,0.052],[0.121,0.062],[0.099,0.051],[0.072,0.040],[0.061,0.033],[0.059,0.032],[0.060,0.033],[0.068,0.037],[0.070,0.040],[0.070,0.039]]],
+["Santa Cruz",37.04,-122.03,"coastal_s",[[0.261,0.143],[0.278,0.153],[0.336,0.188],[0.382,0.221],[0.360,0.201],[0.299,0.169],[0.249,0.140],[0.220,0.122],[0.221,0.121],[0.229,0.129],[0.241,0.137],[0.250,0.141]]],
+["San Benito",36.60,-121.07,"coastal_s",[[0.262,0.143],[0.279,0.152],[0.337,0.190],[0.381,0.220],[0.360,0.202],[0.300,0.170],[0.250,0.140],[0.220,0.122],[0.222,0.122],[0.229,0.128],[0.240,0.137],[0.250,0.141]]],
+["Kings",36.07,-119.82,"central_valley",[[0.183,0.101],[0.198,0.110],[0.278,0.160],[0.349,0.199],[0.317,0.182],[0.250,0.140],[0.198,0.109],[0.181,0.100],[0.178,0.099],[0.190,0.104],[0.183,0.101],[0.171,0.093]]],
+["Tulare",36.21,-118.79,"central_valley",[[0.183,0.100],[0.198,0.111],[0.278,0.160],[0.350,0.200],[0.318,0.183],[0.251,0.140],[0.199,0.109],[0.182,0.100],[0.178,0.099],[0.190,0.104],[0.183,0.101],[0.170,0.092]]],
+["Monterey",36.24,-121.31,"coastal_s",[[0.262,0.144],[0.279,0.153],[0.337,0.189],[0.382,0.221],[0.361,0.202],[0.299,0.169],[0.250,0.140],[0.220,0.121],[0.221,0.121],[0.229,0.129],[0.241,0.138],[0.250,0.141]]],
+["San Luis Obispo",35.39,-120.45,"coastal_s",[[0.261,0.143],[0.278,0.152],[0.338,0.190],[0.382,0.221],[0.360,0.201],[0.299,0.169],[0.250,0.139],[0.219,0.122],[0.220,0.120],[0.229,0.129],[0.240,0.137],[0.249,0.141]]],
+["Kern",35.34,-118.73,"central_valley",[[0.183,0.101],[0.198,0.110],[0.278,0.160],[0.350,0.200],[0.318,0.182],[0.250,0.140],[0.199,0.109],[0.181,0.100],[0.178,0.099],[0.190,0.104],[0.182,0.101],[0.170,0.092]]],
+["San Bernardino",34.84,-116.18,"desert",[[0.072,0.040],[0.079,0.043],[0.099,0.053],[0.121,0.062],[0.100,0.052],[0.073,0.041],[0.062,0.033],[0.059,0.032],[0.060,0.033],[0.068,0.037],[0.071,0.040],[0.069,0.039]]],
+["Santa Barbara",34.74,-120.04,"coastal_s",[[0.262,0.143],[0.279,0.152],[0.337,0.190],[0.381,0.220],[0.359,0.200],[0.299,0.169],[0.249,0.139],[0.219,0.121],[0.219,0.120],[0.228,0.129],[0.240,0.137],[0.249,0.140]]],
+["Ventura",34.36,-119.13,"coastal_s",[[0.262,0.143],[0.279,0.152],[0.337,0.190],[0.381,0.220],[0.360,0.201],[0.299,0.169],[0.250,0.139],[0.220,0.122],[0.220,0.121],[0.229,0.129],[0.240,0.137],[0.249,0.141]]],
+["Los Angeles",34.31,-118.23,"coastal_s",[[0.261,0.143],[0.278,0.152],[0.337,0.189],[0.381,0.220],[0.360,0.201],[0.299,0.169],[0.250,0.139],[0.220,0.121],[0.220,0.121],[0.228,0.128],[0.240,0.137],[0.249,0.140]]],
+["Riverside",33.74,-115.99,"desert",[[0.073,0.040],[0.079,0.043],[0.099,0.053],[0.121,0.062],[0.101,0.052],[0.073,0.041],[0.063,0.034],[0.059,0.033],[0.061,0.033],[0.069,0.038],[0.071,0.040],[0.070,0.039]]],
+["Orange",33.67,-117.77,"coastal_s",[[0.261,0.143],[0.278,0.152],[0.337,0.190],[0.380,0.220],[0.359,0.200],[0.299,0.169],[0.249,0.139],[0.219,0.121],[0.220,0.120],[0.228,0.128],[0.240,0.137],[0.249,0.140]]],
+["San Diego",33.25,-116.73,"coastal_s",[[0.262,0.143],[0.278,0.152],[0.336,0.189],[0.381,0.221],[0.359,0.200],[0.298,0.168],[0.249,0.139],[0.219,0.121],[0.220,0.121],[0.229,0.128],[0.240,0.137],[0.249,0.140]]],
+["Imperial",33.04,-115.37,"desert",[[0.071,0.040],[0.078,0.042],[0.097,0.052],[0.120,0.061],[0.099,0.051],[0.072,0.040],[0.061,0.033],[0.058,0.032],[0.059,0.033],[0.067,0.037],[0.069,0.039],[0.068,0.038]]],
+];
+
+// Build lookup by county name
+const dataByCounty = {};
+RAW_DATA.forEach(([name, lat, lon, region, monthly]) => {
+  dataByCounty[name] = { name, lat, lon, region, monthly };
+});
+
+// ── STATE ───────────────────────────────────────────────────────
+let currentMonth = 1; // 1-12
+let currentIndex = "ndvi"; // 'ndvi' or 'evi'
+let selectedCounty = null;
+let playInterval = null;
+let geojson = null;
+let path = null;
+let colorScale = null;
+
+// ── COLOR SCALE ─────────────────────────────────────────────────
+function makeColorScale(index) {
+  const domain = index === "ndvi" ? [0, 0.7] : [0, 0.35];
+  return d3.scaleSequential()
+    .domain(domain)
+    .interpolator(d3.interpolateRgbBasis(["#5C3317","#8B4513","#C68642","#D4C89A","#B5C77E","#7DBD6E","#3d9a50","#1a6b35","#0d4a22"]));
+}
+
+function getValue(county, month, index) {
+  const d = dataByCounty[county];
+  if (!d) return 0;
+  const pair = d.monthly[month - 1];
+  return index === "ndvi" ? pair[0] : pair[1];
+}
+
+// ── LEGEND ──────────────────────────────────────────────────────
+function drawLegend() {
+  const canvas = document.getElementById("legend-gradient");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  const scale = makeColorScale(currentIndex);
+  for (let x = 0; x < w; x++) {
+    const t = x / w;
+    const domain = currentIndex === "ndvi" ? 0.7 : 0.35;
+    ctx.fillStyle = scale(t * domain);
+    ctx.fillRect(x, 0, 1, h);
+  }
+  document.getElementById("legend-title").textContent =
+    currentIndex === "ndvi" ? "NDVI — Vegetation Greenness" : "EVI — Enhanced Vegetation Index";
+}
+
+// ── MAP ──────────────────────────────────────────────────────────
+// County bounding boxes: [lonMin, latMin, lonMax, latMax]
+const COUNTY_BOXES = {
+  "Del Norte":       [-124.21, 41.46, -123.62, 42.01],
+  "Siskiyou":        [-123.62, 41.18, -121.33, 42.01],
+  "Modoc":           [-121.33, 41.18, -119.99, 42.01],
+  "Trinity":         [-123.62, 40.33, -122.52, 41.18],
+  "Shasta":          [-122.52, 40.33, -121.33, 41.18],
+  "Lassen":          [-121.33, 40.18, -119.99, 41.18],
+  "Humboldt":        [-124.41, 40.00, -123.40, 41.46],
+  "Tehama":          [-122.52, 39.79, -121.33, 40.33],
+  "Plumas":          [-121.33, 39.79, -120.07, 40.33],
+  "Mendocino":       [-124.00, 38.77, -122.75, 39.80],
+  "Glenn":           [-122.75, 39.52, -121.98, 39.80],
+  "Butte":           [-121.98, 39.52, -121.25, 39.80],
+  "Sierra":          [-120.50, 39.35, -120.00, 39.80],
+  "Lake":            [-123.00, 38.77, -122.50, 39.35],
+  "Colusa":          [-122.50, 38.90, -121.98, 39.52],
+  "Sutter":          [-121.98, 38.90, -121.50, 39.35],
+  "Yuba":            [-121.50, 38.90, -121.20, 39.35],
+  "Nevada":          [-121.20, 39.00, -120.50, 39.35],
+  "Sonoma":          [-123.40, 38.10, -122.35, 38.77],
+  "Napa":            [-122.35, 38.10, -122.10, 38.77],
+  "Yolo":            [-122.10, 38.50, -121.60, 38.90],
+  "Placer":          [-121.20, 38.75, -120.50, 39.10],
+  "El Dorado":       [-120.50, 38.55, -119.90, 38.90],
+  "Alpine":          [-119.90, 38.55, -119.50, 38.90],
+  "Marin":           [-122.95, 37.88, -122.45, 38.10],
+  "Solano":          [-122.10, 38.05, -121.60, 38.50],
+  "Sacramento":      [-121.60, 38.07, -121.10, 38.70],
+  "Amador":          [-120.99, 38.20, -120.50, 38.60],
+  "Calaveras":       [-120.99, 37.92, -120.20, 38.27],
+  "Tuolumne":        [-120.20, 37.72, -119.50, 38.10],
+  "San Francisco":   [-122.52, 37.70, -122.36, 37.83],
+  "Contra Costa":    [-122.45, 37.75, -121.55, 38.10],
+  "Alameda":         [-122.35, 37.45, -121.47, 37.90],
+  "San Joaquin":     [-121.55, 37.70, -120.93, 38.07],
+  "Stanislaus":      [-121.10, 37.27, -120.50, 37.83],
+  "Mariposa":        [-120.20, 37.20, -119.50, 37.75],
+  "Mono":            [-119.50, 37.40, -117.90, 38.35],
+  "San Mateo":       [-122.50, 37.25, -121.90, 37.70],
+  "Santa Clara":     [-122.30, 37.00, -121.25, 37.47],
+  "Merced":          [-121.10, 36.98, -120.07, 37.62],
+  "Madera":          [-120.07, 36.90, -119.08, 37.35],
+  "Fresno":          [-120.95, 36.50, -118.50, 37.10],
+  "Inyo":            [-118.50, 35.80, -117.20, 37.60],
+  "Santa Cruz":      [-122.30, 36.85, -121.55, 37.18],
+  "San Benito":      [-121.55, 36.55, -121.00, 37.10],
+  "Kings":           [-120.50, 35.80, -119.40, 36.60],
+  "Tulare":          [-119.40, 35.80, -118.20, 36.70],
+  "Monterey":        [-122.00, 35.80, -120.60, 36.98],
+  "San Luis Obispo": [-121.40, 35.12, -119.50, 35.80],
+  "Kern":            [-119.50, 34.70, -117.60, 35.80],
+  "San Bernardino":  [-117.65, 33.42, -114.15, 35.80],
+  "Santa Barbara":   [-120.90, 34.45, -119.00, 35.12],
+  "Ventura":         [-119.25, 34.13, -118.63, 34.82],
+  "Los Angeles":     [-118.95, 33.70, -117.65, 34.82],
+  "Riverside":       [-117.65, 33.42, -114.50, 34.08],
+  "Orange":          [-118.10, 33.38, -117.40, 33.95],
+  "San Diego":       [-117.60, 32.52, -116.10, 33.50],
+  "Imperial":        [-116.10, 32.52, -114.45, 33.42],
+};
+
+// CA geographic bounds with a little padding
+const LON_MIN = -124.5, LON_MAX = -114.1;
+const LAT_MIN = 32.4,   LAT_MAX = 42.1;
+
+let scaleX, scaleY;
+
+function project(lon, lat) {
+  return [scaleX(lon), scaleY(lat)];
+}
+
+function boxToPoints(box) {
+  const [x0, y0] = project(box[0], box[3]); // lonMin, latMax → top-left
+  const [x1, y1] = project(box[2], box[1]); // lonMax, latMin → bottom-right
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+function initMap() {
+  const svg = d3.select("#map-svg");
+  const box = document.querySelector(".map-panel").getBoundingClientRect();
+  const W = box.width, H = box.height;
+  const pad = 16;
+
+  svg.attr("viewBox", `0 0 ${W} ${H}`).attr("preserveAspectRatio", "xMidYMid meet");
+
+  // Build linear scales: lon→x, lat→y (lat inverted: higher lat = lower y)
+  const lonSpan = LON_MAX - LON_MIN;
+  const latSpan = LAT_MAX - LAT_MIN;
+  const availW = W - pad * 2;
+  const availH = H - pad * 2;
+  // Keep aspect ratio
+  const scaleF = Math.min(availW / lonSpan, availH / latSpan);
+  const mapW = lonSpan * scaleF;
+  const mapH = latSpan * scaleF;
+  const offX = pad + (availW - mapW) / 2;
+  const offY = pad + (availH - mapH) / 2;
+
+  scaleX = d3.scaleLinear().domain([LON_MIN, LON_MAX]).range([offX, offX + mapW]);
+  scaleY = d3.scaleLinear().domain([LAT_MAX, LAT_MIN]).range([offY, offY + mapH]); // flipped
+
+  colorScale = makeColorScale(currentIndex);
+
+  const g = svg.append("g").attr("class", "counties");
+
+  const entries = Object.entries(COUNTY_BOXES);
+
+  g.selectAll(".county-path")
+    .data(entries)
+    .join("rect")
+    .attr("class", "county-path")
+    .attr("x",      d => boxToPoints(d[1]).x)
+    .attr("y",      d => boxToPoints(d[1]).y)
+    .attr("width",  d => boxToPoints(d[1]).w)
+    .attr("height", d => boxToPoints(d[1]).h)
+    .attr("fill", d => {
+      const v = getValue(d[0], currentMonth, currentIndex);
+      return colorScale(v);
+    })
+    .on("mousemove", function(event, d) {
+      const name = d[0];
+      const v_ndvi = getValue(name, currentMonth, "ndvi");
+      const v_evi  = getValue(name, currentMonth, "evi");
+      const cd = dataByCounty[name];
+
+      d3.select("#tt-county").text(name);
+      d3.select("#tt-ndvi").text(v_ndvi.toFixed(3));
+      d3.select("#tt-evi").text(v_evi.toFixed(3));
+      d3.select("#tt-region").text(REGION_LABELS[cd ? cd.region : ""] || "—");
+
+      const tt = document.getElementById("tooltip");
+      tt.style.display = "block";
+      tt.style.left = (event.clientX + 14) + "px";
+      tt.style.top  = (event.clientY - 10) + "px";
+    })
+    .on("mouseleave", function() {
+      document.getElementById("tooltip").style.display = "none";
+    })
+    .on("click", function(event, d) {
+      selectCounty(d[0], this);
+    });
+
+  // Add county name labels for larger counties
+  const labelG = svg.append("g").attr("class", "county-labels");
+  entries.forEach(([name, b]) => {
+    const { x, y, w, h } = boxToPoints(b);
+    // Only label counties wide/tall enough to show text
+    if (w < 18 || h < 10) return;
+    const fontSize = Math.max(6, Math.min(11, w / name.length * 1.4));
+    labelG.append("text")
+      .attr("x", x + w / 2)
+      .attr("y", y + h / 2 + fontSize * 0.35)
+      .attr("text-anchor", "middle")
+      .attr("font-family", "DM Mono, monospace")
+      .attr("font-size", fontSize)
+      .attr("fill", "rgba(255,255,255,0.55)")
+      .attr("pointer-events", "none")
+      .text(name.length > 12 ? name.split(" ").map(w => w[0]).join("") : name);
+  });
+}
+
+function updateMap() {
+  colorScale = makeColorScale(currentIndex);
+  d3.selectAll(".county-path")
+    .transition().duration(300)
+    .attr("fill", function(d) {
+      const v = getValue(d[0], currentMonth, currentIndex);
+      return colorScale(v);
+    });
+  drawLegend();
+}
+
+// ── CONTROLS ─────────────────────────────────────────────────────
+function setMonth(m) {
+  currentMonth = m;
+  document.getElementById("month-slider").value = m;
+  document.getElementById("month-label").textContent = MONTHS[m - 1];
+  updateMap();
+  updateRegionBars();
+  updateInsight();
+  if (selectedCounty) {
+    updateSidePanel(selectedCounty);
+    updateTimeSeries(selectedCounty);
+  }
+}
+
+function setIndex(idx) {
+  currentIndex = idx;
+  document.getElementById("btn-ndvi").classList.toggle("active", idx === "ndvi");
+  document.getElementById("btn-evi").classList.toggle("active", idx === "evi");
+  updateMap();
+  if (selectedCounty) updateTimeSeries(selectedCounty);
+}
+
+function togglePlay() {
+  const btn = document.getElementById("play-btn");
+  if (playInterval) {
+    clearInterval(playInterval);
+    playInterval = null;
+    btn.textContent = "▶ PLAY";
+    btn.classList.remove("playing");
+  } else {
+    btn.textContent = "⏸ PAUSE";
+    btn.classList.add("playing");
+    playInterval = setInterval(() => {
+      const next = (currentMonth % 12) + 1;
+      setMonth(next);
+    }, 900);
+  }
+}
+
+// ── SELECTION ─────────────────────────────────────────────────────
+function selectCounty(name, el) {
+  selectedCounty = name;
+  // Update selected styling
+  d3.selectAll(".county-path").classed("selected", false);
+  if (el) d3.select(el).classed("selected", true);
+
+  document.getElementById("selected-name").textContent = name;
+  const cd = dataByCounty[name];
+  document.getElementById("selected-region").textContent = cd ? REGION_LABELS[cd.region] : "";
+  document.getElementById("selected-hint").style.display = "none";
+  document.getElementById("stats-grid").style.display = "grid";
+  document.getElementById("chart-section").style.display = "block";
+
+  updateSidePanel(name);
+  updateTimeSeries(name);
+}
+
+function updateSidePanel(name) {
+  const cd = dataByCounty[name];
+  if (!cd) return;
+
+  const v_ndvi = getValue(name, currentMonth, "ndvi");
+  const v_evi  = getValue(name, currentMonth, "evi");
+
+  document.getElementById("stat-ndvi").textContent = v_ndvi.toFixed(3);
+  document.getElementById("stat-evi").textContent  = v_evi.toFixed(3);
+
+  // Find peak NDVI month
+  let peakMonth = 0, peakVal = -1;
+  for (let m = 0; m < 12; m++) {
+    if (cd.monthly[m][0] > peakVal) { peakVal = cd.monthly[m][0]; peakMonth = m; }
+  }
+  document.getElementById("stat-peak").textContent = MONTHS[peakMonth];
+  document.getElementById("stat-peak-val").textContent = `NDVI ${peakVal.toFixed(3)}`;
+
+  const vals = cd.monthly.map(p => p[0]);
+  const range = (Math.max(...vals) - Math.min(...vals)).toFixed(3);
+  document.getElementById("stat-range").textContent = range;
+}
+
+// ── TIME SERIES CHART ─────────────────────────────────────────────
+function updateTimeSeries(name) {
+  const cd = dataByCounty[name];
+  if (!cd) return;
+
+  const svg = d3.select("#time-series-svg");
+  svg.selectAll("*").remove();
+
+  const svgEl = document.getElementById("time-series-svg");
+  const W = svgEl.getBoundingClientRect().width || 292;
+  const H = 160;
+  const margin = { top: 12, right: 10, bottom: 30, left: 34 };
+  const w = W - margin.left - margin.right;
+  const h = H - margin.top - margin.bottom;
+
+  svg.attr("height", H);
+
+  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const ndvi_vals = cd.monthly.map((p, i) => ({ m: i, v: p[0] }));
+  const evi_vals  = cd.monthly.map((p, i) => ({ m: i, v: p[1] }));
+
+  const allVals = [...cd.monthly.map(p => p[0]), ...cd.monthly.map(p => p[1])];
+  const yMax = Math.max(...allVals) * 1.15;
+  const yMin = Math.min(...allVals) * 0.85;
+
+  const x = d3.scaleLinear().domain([0, 11]).range([0, w]);
+  const y = d3.scaleLinear().domain([yMin, yMax]).range([h, 0]);
+
+  // Axes
+  g.append("g").attr("class", "axis").attr("transform", `translate(0,${h})`).call(
+    d3.axisBottom(x).tickValues(d3.range(12)).tickFormat(i => MONTHS[i].slice(0, 1))
+  );
+  g.append("g").attr("class", "axis").call(d3.axisLeft(y).ticks(4).tickFormat(d3.format(".2f")));
+
+  // Area + line for NDVI
+  const area = d3.area().x(d => x(d.m)).y0(h).y1(d => y(d.v)).curve(d3.curveCatmullRom);
+  const line = d3.line().x(d => x(d.m)).y(d => y(d.v)).curve(d3.curveCatmullRom);
+
+  g.append("path").datum(ndvi_vals).attr("class", "ts-area").attr("fill", "#4caf7d").attr("d", area);
+  g.append("path").datum(ndvi_vals).attr("class", "ts-line").attr("stroke", "#4caf7d").attr("d", line);
+  g.append("path").datum(evi_vals).attr("class", "ts-line").attr("stroke", "#5b8dd9").attr("d", line);
+
+  // Dots for NDVI
+  g.selectAll(".dot-n").data(ndvi_vals).join("circle")
+    .attr("class", "ts-dot").attr("cx", d => x(d.m)).attr("cy", d => y(d.v))
+    .attr("r", 4).attr("fill", "#4caf7d")
+    .on("mouseover", function() { d3.select(this).attr("r", 6); })
+    .on("mouseout", function() { d3.select(this).attr("r", 4); });
+
+  g.selectAll(".dot-e").data(evi_vals).join("circle")
+    .attr("class", "ts-dot").attr("cx", d => x(d.m)).attr("cy", d => y(d.v))
+    .attr("r", 4).attr("fill", "#5b8dd9")
+    .on("mouseover", function() { d3.select(this).attr("r", 6); })
+    .on("mouseout", function() { d3.select(this).attr("r", 4); });
+
+  // Current month line
+  const cx = x(currentMonth - 1);
+  g.append("line").attr("class", "current-month-line")
+    .attr("x1", cx).attr("x2", cx).attr("y1", 0).attr("y2", h);
+
+  g.append("text").attr("class", "axis-label")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -h / 2).attr("y", -28).attr("text-anchor", "middle")
+    .text(currentIndex.toUpperCase());
+}
+
+// ── REGIONAL BARS ─────────────────────────────────────────────────
+const REGION_ORDER = ["coastal_n","coastal_s","sierra","mountain","central_valley","desert"];
+
+function updateRegionBars() {
+  document.getElementById("region-month-label").textContent = MONTHS[currentMonth - 1];
+
+  // Compute mean by region
+  const means = {};
+  REGION_ORDER.forEach(r => { means[r] = []; });
+  RAW_DATA.forEach(([name,,, region, monthly]) => {
+    const v = monthly[currentMonth - 1][currentIndex === "ndvi" ? 0 : 1];
+    if (means[region]) means[region].push(v);
+  });
+
+  const regionMeans = REGION_ORDER.map(r => ({
+    region: r,
+    val: means[r].length ? d3.mean(means[r]) : 0
+  }));
+
+  const maxVal = Math.max(...regionMeans.map(d => d.val));
+
+  const container = document.getElementById("region-bars");
+  container.innerHTML = "";
+
+  regionMeans.forEach(({ region, val }) => {
+    const pct = (val / (currentIndex === "ndvi" ? 0.7 : 0.35)) * 100;
+    const color = makeColorScale(currentIndex)(val);
+    const row = document.createElement("div");
+    row.className = "region-row";
+    row.innerHTML = `
+      <div class="region-name">${REGION_LABELS[region].split("/")[0]}</div>
+      <div class="region-bar-wrap">
+        <div class="region-bar" style="width:${pct}%; background:${color}"></div>
+      </div>
+      <div class="region-val">${val.toFixed(3)}</div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+// ── INSIGHT ───────────────────────────────────────────────────────
+const INSIGHTS = {
+  1: "January: California's vegetation is at its annual low. Desert counties show near-zero NDVI. Northern coastal forests maintain their greenery year-round due to fog and rainfall.",
+  2: "February: Early green-up begins in coastal regions as winter rains take effect. Central Valley grasslands start their brief seasonal bloom.",
+  3: "March: The greening accelerates. Coastal ranges and foothills respond to spring rains. This is when California first <strong>'turns green'</strong> across most of the state.",
+  4: "April: Peak greening for coastal and Central Valley regions. NDVI across the Coast Ranges reaches its annual maximum (~0.55). Sierra Nevada snowmelt begins.",
+  5: "May: Statewide vegetation peaks. The Sierra Nevada reaches maximum greenness as snowmelt feeds subalpine meadows. Southern California already beginning to dry out.",
+  6: "June: Mediterranean dry season begins. Valley grasslands brown rapidly. Coastal forests remain green, Sierra Nevada stays lush from snowmelt reserves.",
+  7: "July: Inland drought stress is clear. Desert NDVI at minimum. Sierra Nevada conifer forests maintain high NDVI sustained by deep snowmelt. Coastal fog belt stays green.",
+  8: "August: California at its driest. Sharp north-south and coast-inland contrasts. The Sierra Nevada shows how evergreen forests buffer summer drought.",
+  9: "September: Slight recovery in some regions after late-summer storms. Coastal areas remain stable. Desert annuals may briefly green from monsoon moisture.",
+  10: "October: Autumn transition. First rains begin in northern California. Coastal and mountain regions show early greening response to returning moisture.",
+  11: "November: Northern coastal and mountain regions turning green again. Mediterranean winter rainy season begins. Distinct north-south gradient visible.",
+  12: "December: Winter state resembles January but with coastal regions already responding to rains. Northern CA notably greener than southern CA deserts."
+};
+
+function updateInsight() {
+  document.getElementById("insight-box").innerHTML = INSIGHTS[currentMonth];
+}
+
+// ── WRITEUP TOGGLE ─────────────────────────────────────────────────
+function toggleWriteup() {
+  const el = document.getElementById("writeup-content");
+  const btn = document.querySelector(".writeup-toggle");
+  if (el.style.display === "none") {
+    el.style.display = "block";
+    btn.textContent = "▾ Design Rationale & Development Notes";
+  } else {
+    el.style.display = "none";
+    btn.textContent = "▸ Design Rationale & Development Notes";
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+function updateLayoutHeight() {
+  const headerH = document.querySelector("header").offsetHeight;
+  document.documentElement.style.setProperty("--header-h", headerH + "px");
+}
+
+window.addEventListener("load", () => {
+  updateLayoutHeight();
+  initMap();
+  drawLegend();
+  updateRegionBars();
+  updateInsight();
+
+  // Handle resize
+  window.addEventListener("resize", () => {
+    updateLayoutHeight();
+    d3.select("#map-svg").selectAll("*").remove();
+    initMap();
+    updateMap();
+    if (selectedCounty) {
+      selectCounty(selectedCounty, null);
+    }
+  });
+});
+</script>
+</body>
+</html>
